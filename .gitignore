@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 .env
 /PokeCraft/.env
+data
+__pycache__
+output
