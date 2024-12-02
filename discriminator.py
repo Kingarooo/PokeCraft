@@ -1,21 +1,22 @@
-import utils
-import numpy as np
-
-class Discriminator:
-    def __init__(self, input_dim):
-        self.weights = utils.initialize_weights((input_dim, 1))
-        self.bias = np.zeros((1, 1))
-
-    def forward(self, x):
-        self.x = x
-        self.logits = np.dot(x, self.weights) + self.bias
-        self.output = utils.sigmoid(self.logits)
-        return self.output
+import torch
+import torch.nn as nn
+class Discriminator(nn.Module):
+    def __init__(self, channels_img):
+        super(Discriminator, self).__init__()
+        self.net = nn.Sequential(
+            self._block(channels_img, 64, 4, 2, 1),
+            self._block(64, 128, 4, 2, 1),
+            self._block(128, 256, 4, 2, 1),
+            nn.Conv2d(256, 1, kernel_size=4, stride=1, padding=0),
+            nn.Sigmoid()  # Saída entre 0 e 1
+        )
     
-    def backward(self, grad_output, lr):
-        grad_weights = np.dot(self.x.T, grad_output)  # Gradients for weights
-        grad_bias = np.sum(grad_output, axis=0, keepdims=True)
-
-        # Update weights and biases
-        self.weights -= lr * grad_weights
-        self.bias -= lr * grad_bias
+    def _block(self, in_channels, out_channels, kernel_size, stride, padding):
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.LeakyReLU(0.2)
+        )
+    
+    def forward(self, x):
+        return self.net(x)

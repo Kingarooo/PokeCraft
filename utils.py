@@ -1,6 +1,9 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from PIL import Image
+import torch.nn as nn
+from PIL import Image
+from torchvision.datasets import ImageFolder
+import torch
 import os
 
 def sigmoid(x):
@@ -10,41 +13,34 @@ def sigmoid(x):
 def tanh(x):
     return np.tanh(x)
 
-def initialize_weights(shape):
-    return np.random.randn(*shape) * np.sqrt(2. / shape[0])  # He initialization for ReLU
-
+def initialize_weights(model):
+    for m in model.modules():
+        if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+            nn.init.normal_(m.weight, 0.0, 0.02)  # Inicialização normal
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
 
 def binary_cross_entropy(y_true, y_pred):
+    epsilon = 1e-7  # Evitar log(0)
+    y_pred = np.clip(y_pred, epsilon, 1 - epsilon)  # Clipping antes do log
     return -np.mean(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
 
-def show_generated_images(images, epoch,num_images=16):
-    """Shows multiple generated images in a grid format."""
-    # Reshape images if needed (for example, 128x128x3 images)
-    images = (images + 1) / 2 * 255 
-    images = images[:num_images]  # Limit to num_images if there are more
-    images = images.reshape(-1, 128, 128)  # Reshape to 128x128 RGB (assuming images are 128x128x3)
-    images = images.astype(np.uint8)
-    # Plotting the images in a grid
-    fig, axes = plt.subplots(4, 4, figsize=(8, 8))  # Adjust the grid size as needed
+def wasserstein_loss(y_true, y_pred):
+    return torch.mean(y_true * y_pred)
 
-    output_dir = "output"
-    os.makedirs(output_dir, exist_ok=True)
 
-    axes = axes.ravel()
+class CustomImageFolder(ImageFolder):
+    def __init__(self, image_folder, transform=None):
+        self.image_folder = image_folder
+        self.image_files = [os.path.join(image_folder, file) for file in os.listdir(image_folder) if file.endswith('.png')]
+        self.transform = transform
 
-    for i in range(num_images):
-        img = images[i]  # Get a single image (assuming shape is [batch_size, height, width, channels])
+    def __len__(self):
+        return len(self.image_files)
 
-        # Convert the image to a PIL Image object
-        pil_img = Image.fromarray(img)
-
-        # Resize the image if necessary (to target_size)
-
-        # Save the image as a .png file
-        pil_img.save(os.path.join(output_dir, f"epoch_{epoch}_image_{i}.png"))
-    
-    for i in range(num_images):
-        axes[i].imshow(images[i])
-        axes[i].axis('off')
-    
-    plt.show()
+    def __getitem__(self, idx):
+        image_path = self.image_files[idx]
+        image = Image.open(image_path).convert("RGBA")  # Garantir 4 canais (RGBA)
+        if self.transform:
+            image = self.transform(image)
+        return image

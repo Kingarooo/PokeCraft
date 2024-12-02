@@ -1,23 +1,24 @@
-import utils
-import numpy as np
+import torch
+import torch.nn as nn
 
-class Generator:
-  def __init__(self, input_dim, output_dim):
-    self.weights = utils.initialize_weights((input_dim, output_dim))
-    self.bias = np.zeros((1, output_dim))
 
-  def forward(self, z):
-    self.z = z
-    self.hidden = np.dot(z, self.weights) + self.bias
-    self.output = np.dot(z, self.weights) + self.bias
-    return self.output
-  
-  def backward(self, grad_output, lr):
-    grad_weights = np.dot(self.z.T, grad_output)  # Gradients for weights
-    grad_bias = np.sum(grad_output, axis=0, keepdims=True)  # Gradients for biases
-
-    # Update weights and biases
-    self.weights -= lr * grad_weights
-    self.bias -= lr * grad_bias
-    #! Regularização: caso os weights sejam muito grandes, descomentar isto para limitar o valor deles
-    #self.weights = np.clip(self.weights, -0.01, 0.01)
+class Generator(nn.Module):
+    def __init__(self, noise_dim, channels_img):
+        super(Generator, self).__init__()
+        self.net = nn.Sequential(
+            self._block(noise_dim, 256, 4, 1, 0),  # Entrada: Vetor de ruído
+            self._block(256, 128, 4, 2, 1),
+            self._block(128, 64, 4, 2, 1),
+            nn.ConvTranspose2d(64, channels_img, kernel_size=4, stride=2, padding=1),
+            nn.Tanh()  # Saída entre -1 e 1
+        )
+    
+    def _block(self, in_channels, out_channels, kernel_size, stride, padding):
+        return nn.Sequential(
+            nn.ConvTranspose2d(in_channels, out_channels, kernel_size, stride, padding, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU()
+        )
+    
+    def forward(self, x):
+        return self.net(x)
