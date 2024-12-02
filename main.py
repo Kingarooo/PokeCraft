@@ -1,107 +1,101 @@
-import os
-import re
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
-from torchvision.io import read_image
-from torchvision.utils import save_image
-from torch.utils.data import Dataset
-import utils # Importando funções auxiliares
-from utils import CustomImageFolder
-from generator import Generator
 from discriminator import Discriminator
+from generator import Generator
+import torchvision
+import torchvision.transforms as transforms
+import torchvision.datasets as datasets
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard.writer import SummaryWriter
+from utils import initialize_weights
+import os
 
-# Parâmetros principais
-latent_dim = 100  # Dimensão do vetor de entrada do gerador
-img_size = 128  # Tamanho das imagens (128x128)
-channels = 4  # 4 canais RGBA
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Inicialização dos modelos
-noise_dim = 100
-channels_img = 4  # RGBA
-device = "cuda" if torch.cuda.is_available() else "cpu"
+LEARNING_RATE = 2e-4
+BATCH_SIZE = 128
+IMAGE_SIZE = 64
+CHANNELS_IMG = 3
+Z_DIM = 100
+NUM_EPOCHS = 200
 
-gen = Generator(noise_dim, channels_img).to(device)
-disc = Discriminator(channels_img).to(device)
+FEATURES_DISC = 64
+FEATURES_GEN = 64
 
-gen_path = "generator.pth"
-disc_path = "discriminator.pth"
+transforms = transforms.Compose([
+  transforms.Resize(IMAGE_SIZE),
+  transforms.ToTensor(),
+  transforms.Normalize([0.5 for _ in range(CHANNELS_IMG)], [0.5 for _ in range(CHANNELS_IMG)])
 
-# Função para carregar o modelo, se existir
-if os.path.exists(gen_path) and os.path.exists(disc_path):
-    print("Carregando modelos salvos...")
-    gen.load_state_dict(torch.load(gen_path))
-    disc.load_state_dict(torch.load(disc_path))
-else:
-    print("Nenhum modelo salvo encontrado. Treinamento será iniciado do zero.")
-
-
-
-criterion = nn.BCELoss()
-opt_gen = optim.Adam(gen.parameters(), lr=2e-4, betas=(0.5, 0.999))
-opt_disc = optim.Adam(disc.parameters(), lr=2e-4, betas=(0.5, 0.999))
-
-# Transformações
-transform = transforms.Compose([
-    transforms.Resize((64, 64)),  # Redimensiona para 64x64
-    transforms.ToTensor(),       # Converte para tensor PyTorch
-    transforms.Normalize((0.5, 0.5, 0.5, 0.5), (0.5, 0.5, 0.5, 0.5))  # Normaliza
 ])
 
-dataset = CustomImageFolder(image_folder="data/images/all", transform=transform)
-dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
+dataset = datasets.ImageFolder(root="data/processed", transform=transforms)
+
+loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+
+gen = Generator(Z_DIM, CHANNELS_IMG, FEATURES_GEN).to(device)
+disc = Discriminator(CHANNELS_IMG, FEATURES_DISC).to(device)
+
+if os.path.exists("gen.pth"):
+  gen.load_state_dict(torch.load("gen.pth"))
+  print("Generator loaded")
+if os.path.exists("disc.pth"):
+  disc.load_state_dict(torch.load("disc.pth"))
+  print("Discriminator loaded")
+
+initialize_weights(gen)
+initialize_weights(disc)
+
+opt_gen = optim.Adam(gen.parameters(), lr=LEARNING_RATE, betas=(0.5, 0.999))
+opt_disc = optim.Adam(disc.parameters(), lr=LEARNING_RATE, betas=(0.5, 0.999))
+
+criterion = nn.BCELoss()
+
+fixed_noise = torch.randn(32, Z_DIM, 1, 1).to(device)
 
 
-if os.path.exists('generator.pth'):
-    gen.load_state_dict(torch.load('gen.pth'))
-    gen.eval()
-    print('Generator loaded')
-if os.path.exists('discriminator.pth'):
-    disc.load_state_dict(torch.load('disc.pth'))
-    disc.eval()
-    print('Discriminator loaded')
+writer_real = SummaryWriter(f"logs/real")
+writer_fake = SummaryWriter(f"logs/fake")
+step = 0
+gen.train()
+disc.train()
 
 
-# Função de treinamento
-epochs = 100
-for epoch in range(epochs):
-    for batch in dataloader:
-        real = batch.to(device)
-        batch_size = real.size(0)
-        noise = torch.randn(batch_size, noise_dim, 1, 1).to(device)
+for epoch in range(NUM_EPOCHS):
+  for batch_idx, (real, _) in enumerate(loader):
+    real = real.to(device)
+    noise = torch.randn(BATCH_SIZE, Z_DIM, 1, 1).to(device)
+    fake = gen(noise)
 
-        # Treinar Discriminador
-        fake = gen(noise)
-        disc_real = disc(real).view(-1)
-        loss_disc_real = criterion(disc_real, torch.ones_like(disc_real))
-        disc_fake = disc(fake.detach()).view(-1)
-        loss_disc_fake = criterion(disc_fake, torch.zeros_like(disc_fake))
-        loss_disc = (loss_disc_real + loss_disc_fake) / 2
-        opt_disc.zero_grad()
-        loss_disc.backward()
-        opt_disc.step()
+    disc_real = disc(real).reshape(-1)
+    loss_disc_real = criterion(disc_real, torch.ones_like(disc_real))
+    disc_fake = disc(fake).reshape(-1)
+    loss_disc_fake = criterion(disc_fake, torch.zeros_like(disc_fake))
+    loss_disc = (loss_disc_real + loss_disc_fake) / 2
+    disc.zero_grad()
+    loss_disc.backward(retain_graph=True)
+    opt_disc.step()
 
-        # Treinar Gerador
-        gen_updates = 2
-        for i in range(gen_updates):
-                fake = gen(noise)
-                output = disc(fake).view(-1)
-                loss_gen = criterion(output, torch.ones_like(output))
+    output = disc(fake).reshape(-1)
+    loss_gen = criterion(output, torch.ones_like(output))
+    gen.zero_grad()
+    loss_gen.backward()
+    opt_gen.step()
 
-                opt_gen.zero_grad()
-                loss_gen.backward(retain_graph=(i < gen_updates - 1))  # Retain graph for all but the last backward call
-                opt_gen.step()
+    if batch_idx % 50 == 0:
+      print(f"Epoch [{epoch}/{NUM_EPOCHS}] Batch {batch_idx}/{len(loader)} Loss D: {loss_disc:.4f}, loss G: {loss_gen:.4f}")
 
-    print(f"Epoch [{epoch+1}/{epochs}] Loss D: {loss_disc:.4f}, Loss G: {loss_gen:.4f}")
+      with torch.no_grad():
+        fake = gen(fixed_noise)
+        img_grid_real = torchvision.utils.make_grid(real[:32], normalize=True)
+        img_grid_fake = torchvision.utils.make_grid(fake[:32], normalize=True)
 
-    # Salvar imagens geradas a cada epoch
-    if (epoch + 1) % 10 == 0:
-        with torch.no_grad():
-            fake = gen(noise).cpu()
-            save_image(fake, f"generated_epoch_{epoch+1}.png", normalize=True)
-            torch.save(gen.state_dict(), gen_path)
-            torch.save(disc.state_dict(), disc_path)
-            print(f"Modelos salvos após a época {epoch+1}.")
+        writer_real.add_image("Real", img_grid_real, global_step=step)
+        writer_fake.add_image("Fake", img_grid_fake, global_step=step)
+        #save the model
+        torch.save(gen.state_dict(), "gen.pth")
+        torch.save(disc.state_dict(), "disc.pth")
+
+      step += 1
+

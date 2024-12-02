@@ -3,13 +3,15 @@ import torch.nn as nn
 
 
 class Generator(nn.Module):
-    def __init__(self, noise_dim, channels_img):
+    def __init__(self, z_dim, channels_img, features_g):
         super(Generator, self).__init__()
-        self.net = nn.Sequential(
-            self._block(noise_dim, 256, 4, 1, 0),  # Entrada: Vetor de ruído
-            self._block(256, 128, 4, 2, 1),
-            self._block(128, 64, 4, 2, 1),
-            nn.ConvTranspose2d(64, channels_img, kernel_size=4, stride=2, padding=1),
+        self.gen = nn.Sequential(
+            self._block(z_dim, features_g*16, 4, 1, 0),  # Entrada: Vetor de ruído
+            self._block(features_g*16, features_g*8, 4, 2, 1),
+            self._block(features_g*8, features_g*4, 4, 2, 1),
+            self._block(features_g*4, features_g*2, 4, 2, 1),
+
+            nn.ConvTranspose2d(features_g*2, channels_img, kernel_size=4, stride=2, padding=1),
             nn.Tanh()  # Saída entre -1 e 1
         )
     
@@ -21,4 +23,4 @@ class Generator(nn.Module):
         )
     
     def forward(self, x):
-        return self.net(x)
+        return self.gen(x)

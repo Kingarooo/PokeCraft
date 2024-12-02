@@ -1,15 +1,20 @@
 import torch
 import torch.nn as nn
 class Discriminator(nn.Module):
-    def __init__(self, channels_img):
+    def __init__(self, channels_img,features_d):
         super(Discriminator, self).__init__()
-        self.net = nn.Sequential(
-            self._block(channels_img, 64, 4, 2, 1),
-            self._block(64, 128, 4, 2, 1),
-            self._block(128, 256, 4, 2, 1),
-            nn.Conv2d(256, 1, kernel_size=4, stride=1, padding=0),
-            nn.Sigmoid()  # Saída entre 0 e 1
+        self.disc = nn.Sequential(
+            #Input: N x channels_img x 64 x 64
+
+            nn.Conv2d(channels_img, features_d, kernel_size=4, stride=2, padding=1), #32x32
+            nn.LeakyReLU(0.2),
+            self._block(features_d, features_d*2, 4, 2, 1),
+            self._block(features_d*2, features_d*4, 4, 2, 1),
+            self._block(features_d*4, features_d*8, 4, 2, 1),
+            nn.Conv2d(features_d*8, 1, kernel_size=4, stride=2, padding=0),
+            nn.Sigmoid(),
         )
+
     
     def _block(self, in_channels, out_channels, kernel_size, stride, padding):
         return nn.Sequential(
@@ -19,4 +24,4 @@ class Discriminator(nn.Module):
         )
     
     def forward(self, x):
-        return self.net(x)
+        return self.disc(x)
