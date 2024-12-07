@@ -32,7 +32,7 @@ transforms = transforms.Compose([
 
 ])
 
-dataset = datasets.ImageFolder(root="data/processed", transform=transforms)
+dataset = datasets.ImageFolder(root="../data/processed", transform=transforms)
 
 loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
@@ -66,7 +66,6 @@ elif argv[1] == 'generate':
     print(f"Saved image in fake/generated_image_{i}_.png")
   exit()
    
-
 if os.path.exists("gen.pth"):
   gen.load_state_dict(torch.load("gen.pth"))
   print("Generator loaded")
